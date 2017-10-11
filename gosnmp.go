@@ -36,7 +36,10 @@ const (
 // GoSNMP represents GoSNMP library state
 type GoSNMP struct {
 	// Conn is net connection to use, typically established using GoSNMP.Connect()
-	Conn net.Conn
+	Conn *net.UDPConn
+
+	// Destination address to use, typically established using GoSNMP.Connect()
+	DestAddr net.Addr
 
 	// Target is an ipv4 address
 	Target string
@@ -202,7 +205,11 @@ func (x *GoSNMP) Connect() error {
 	}
 
 	addr := net.JoinHostPort(x.Target, strconv.Itoa(int(x.Port)))
-	x.Conn, err = net.DialTimeout("udp", addr, x.Timeout)
+	x.DestAddr, err = net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return fmt.Errorf("Error resolving destination host: %s\n", err.Error())
+	}
+	x.Conn, err = net.ListenUDP("udp", nil)
 	if err != nil {
 		return fmt.Errorf("Error establishing connection to host: %s\n", err.Error())
 	}
