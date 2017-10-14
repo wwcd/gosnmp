@@ -874,7 +874,7 @@ func (x *GoSNMP) unmarshalVBL(packet []byte, response *SnmpPacket) error {
 
 // receive response from network and read into a byte array
 func (x *GoSNMP) receive() ([]byte, error) {
-	n, _, err := x.Conn.ReadFrom(x.rxBuf[:])
+	n, err := x.Conn.Read(x.rxBuf[:])
 	if err != nil {
 		return nil, fmt.Errorf("Error reading from UDP: %s", err.Error())
 	}
