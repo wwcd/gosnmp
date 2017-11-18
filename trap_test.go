@@ -261,10 +261,10 @@ func TestSendV1Trap(t *testing.T) {
 	trap := SnmpTrap{
 		Variables:    []SnmpPDU{pdu},
 		Enterprise:   trapTestEnterpriseOid,
-		AgentAddress: "127.0.0.1",
-		GenericTrap:  6,
-		SpecificTrap: 55,
-		Timestamp:    300,
+		AgentAddress: trapTestAgentAddress,
+		GenericTrap:  trapTestGenericTrap,
+		SpecificTrap: trapTestSpecificTrap,
+		Timestamp:    trapTestTimestamp,
 	}
 
 	_, err = ts.SendTrap(trap)
