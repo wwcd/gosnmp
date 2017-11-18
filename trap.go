@@ -33,17 +33,19 @@ func (x *GoSNMP) SendTrap(trap SnmpTrap) (result *SnmpPacket, err error) {
 		return nil, fmt.Errorf("Sendtrap requires at least 1 pdu")
 	}
 
+	if trap.Variables[0].Type == TimeTicks {
+		// check is uint32
+		if _, ok := trap.Variables[0].Value.(uint32); !ok {
+			return nil, fmt.Errorf("Sendtrap TimeTick must be uint32")
+		}
+	}
+
 	switch x.Version {
 	case Version2c, Version3:
 		// do nothing
 		pdutype = SNMPv2Trap
 
-		if trap.Variables[0].Type == TimeTicks {
-			// check is uint32
-			if _, ok := trap.Variables[0].Value.(uint32); !ok {
-				return nil, fmt.Errorf("Sendtrap TimeTick must be uint32")
-			}
-		} else {
+		if trap.Variables[0].Type != TimeTicks {
 			now := uint32(time.Now().Unix())
 			timetickPDU := SnmpPDU{"1.3.6.1.2.1.1.3.0", TimeTicks, now, x.Logger}
 			// prepend timetickPDU
