@@ -75,7 +75,7 @@ func (x *GoSNMP) SendV1Trap(pdus []SnmpPDU, snmpV1TrapHeader SNMPV1TrapHeader) (
 
 	packetOut := x.mkSnmpPacket(Trap, pdus, 0, 0)
 	packetOut.Enterprise = snmpV1TrapHeader.Enterprise
-	packetOut.AgentAddr = snmpV1TrapHeader.AgentAddress
+	packetOut.AgentAddress = snmpV1TrapHeader.AgentAddress
 	packetOut.GenericTrap = snmpV1TrapHeader.GenericTrap
 	packetOut.SpecificTrap = snmpV1TrapHeader.SpecificTrap
 	packetOut.Timestamp = snmpV1TrapHeader.Timestamp

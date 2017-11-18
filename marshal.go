@@ -53,11 +53,7 @@ type SnmpPacket struct {
 	// v1 traps have a very different format from v2c and v3 traps.
 	//
 	// These fields are set via the SNMPV1TrapHeader parameter to SendV1Trap().
-	Enterprise   []int
-	AgentAddr    string
-	GenericTrap  int
-	SpecificTrap int
-	Timestamp    int
+	SNMPV1TrapHeader
 }
 
 type SNMPV1TrapHeader struct {
@@ -377,7 +373,7 @@ func (packet *SnmpPacket) marshalSNMPV1TrapHeader() ([]byte, error) {
 	buf.Write(mOid)
 
 	// write IPAddress type, length and ipAddress value
-	ip := net.ParseIP(packet.AgentAddr)
+	ip := net.ParseIP(packet.AgentAddress)
 	ipAddressBytes := ipv4toBytes(ip)
 	buf.Write([]byte{IPAddress, byte(len(ipAddressBytes))})
 	buf.Write(ipAddressBytes)
@@ -843,15 +839,15 @@ func (x *GoSNMP) unmarshalTrapV1(packet []byte, response *SnmpPacket) error {
 		x.logPrintf("Enterprise: %+v", Enterpise)
 	}
 
-	// Parse AgentAddr
-	rawAgentAddr, count, err := parseRawField(packet[cursor:], "agent-addr")
+	// Parse AgentAddress
+	rawAgentAddress, count, err := parseRawField(packet[cursor:], "agent-address")
 	if err != nil {
 		return fmt.Errorf("Error parsing SNMP packet error: %s", err.Error())
 	}
 	cursor += count
-	if AgentAddr, ok := rawAgentAddr.(string); ok {
-		response.AgentAddr = AgentAddr
-		x.logPrintf("AgentAddr: %s", AgentAddr)
+	if AgentAddress, ok := rawAgentAddress.(string); ok {
+		response.AgentAddress = AgentAddress
+		x.logPrintf("AgentAddress: %s", AgentAddress)
 	}
 
 	// Parse GenericTrap
