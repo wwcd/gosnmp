@@ -52,13 +52,15 @@ type SnmpPacket struct {
 
 	// v1 traps have a very different format from v2c and v3 traps.
 	//
-	// These fields are set via the SNMPV1TrapHeader parameter to SendV1Trap().
+	// These fields are set via the SnmpTrap parameter to SendTrap().
 	SnmpTrap
 }
 
+// SnmpTrap is used to define a SNMP trap, and is passed into SendTrap
 type SnmpTrap struct {
 	Variables []SnmpPDU
 
+	// These fields are required for SNMPV1 Trap Headers
 	Enterprise   string
 	AgentAddress string
 	GenericTrap  int
