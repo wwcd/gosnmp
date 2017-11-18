@@ -52,6 +52,12 @@ func (x *GoSNMP) SendTrap(trap SnmpTrap) (result *SnmpPacket, err error) {
 
 	case Version1:
 		pdutype = Trap
+		if len(trap.Enterprise) == 0 {
+			return nil, fmt.Errorf("Sendtrap for SNMPV1 requires an Enterprise OID")
+		}
+		if len(trap.AgentAddress) == 0 {
+			return nil, fmt.Errorf("Sendtrap for SNMPV1 requires an Agent Address")
+		}
 
 	default:
 		err = fmt.Errorf("SendTrap doesn't support %s", x.Version)
