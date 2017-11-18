@@ -32,8 +32,7 @@ GoSNMP has the following SNMP functions:
 * **Walk** - retrieves a subtree of values using GETNEXT.
 * **BulkWalk** - retrieves a subtree of values using GETBULK.
 * **Set** - supports Integers and OctetStrings
-* **SendV1Trap** - send __SNMPv__ TRAPS
-* **SendTrap** - send __SNMPv2c__ and __SNMPv3__ TRAPs
+* **SendTrap** - send TRAPs
 * **Listen** - act as an NMS for receiving TRAPs
 
 GoSNMP has the following **helper** functions:
