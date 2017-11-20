@@ -99,12 +99,16 @@ type TrapListener struct {
 	c         *sync.Cond
 	m         sync.Mutex
 	conn      *net.UDPConn
+	finish    chan bool
+	done      chan bool
 }
 
 // optional constructor for TrapListener
 func NewTrapListener() *TrapListener {
 	tl := &TrapListener{}
 	tl.c = sync.NewCond(&sync.Mutex{})
+	tl.finish = make(chan bool)
+	tl.done = make(chan bool)
 	return tl
 }
 
@@ -117,12 +121,9 @@ func (t *TrapListener) ready() bool {
 
 // Close terminates the listening on TrapListener socket
 func (t *TrapListener) Close() {
-	t.m.Lock()
-	defer t.m.Unlock()
-	t.listening = false
-	t.c.Broadcast()
 	t.conn.Close()
-	t.conn = nil
+	t.finish <- true
+	<-t.done
 }
 
 // Listen listens on the UDP address addr and calls the OnNewTrap
@@ -141,7 +142,6 @@ func (t *TrapListener) Listen(addr string) (err error) {
 	if err != nil {
 		return err
 	}
-
 	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		return err
@@ -166,17 +166,25 @@ func (t *TrapListener) Listen(addr string) (err error) {
 	}()
 
 	for {
-		var buf [4096]byte
-		rlen, remote, err := conn.ReadFromUDP(buf[:])
-		if err != nil {
-			t.Params.logPrintf("TrapListener: error in read %s\n", err)
+		select {
+		case <-t.finish:
+			t.done <- true
+			return
+
+		default:
+			var buf [4096]byte
+			rlen, remote, err := conn.ReadFromUDP(buf[:])
+			if err != nil {
+				t.Params.logPrintf("TrapListener: error in read %s\n", err)
+			}
+
+			msg := buf[:rlen]
+			traps := t.Params.UnmarshalTrap(msg)
+			if traps != nil {
+				t.OnNewTrap(traps, remote)
+			}
 		}
 
-		msg := buf[:rlen]
-		traps := t.Params.UnmarshalTrap(msg)
-		if traps != nil {
-			t.OnNewTrap(traps, remote)
-		}
 	}
 }
 

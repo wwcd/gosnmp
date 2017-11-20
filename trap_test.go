@@ -154,6 +154,8 @@ func TestSendTrap(t *testing.T) {
 	done := make(chan int)
 
 	tl := NewTrapListener()
+	defer tl.Close()
+
 	tl.OnNewTrap = makeTestTrapHandler(t, done, Version2c)
 	tl.Params = Default
 
@@ -210,7 +212,6 @@ func TestSendTrap(t *testing.T) {
 		t.Fatal("timed out waiting for trap to be received")
 	}
 
-	tl.Close()
 }
 
 // test sending a basic SNMP trap, using our own listener to receive
@@ -218,6 +219,8 @@ func TestSendV1Trap(t *testing.T) {
 	done := make(chan int)
 
 	tl := NewTrapListener()
+	defer tl.Close()
+
 	tl.OnNewTrap = makeTestTrapHandler(t, done, Version1)
 	tl.Params = Default
 
@@ -279,5 +282,4 @@ func TestSendV1Trap(t *testing.T) {
 		t.Fatal("timed out waiting for trap to be received")
 	}
 
-	tl.Close()
 }
