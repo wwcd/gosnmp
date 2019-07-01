@@ -95,7 +95,7 @@ type TrapListener struct {
 
 	// These unexported fields are for letting test cases
 	// know we are ready.
-	conn      *net.UDPConn
+	Conn      *net.UDPConn
 	finish    chan bool
 	done      chan bool
 	listening chan bool
@@ -121,7 +121,7 @@ func (t *TrapListener) Listening() <-chan bool {
 
 // Close terminates the listening on TrapListener socket
 func (t *TrapListener) Close() {
-	t.conn.Close()
+	t.Conn.Close()
 	t.finish <- true
 	<-t.done
 }
@@ -146,7 +146,7 @@ func (t *TrapListener) Listen(addr string) (err error) {
 	if err != nil {
 		return err
 	}
-	t.conn = conn
+	t.Conn = conn
 	defer conn.Close()
 
 	// Mark that we are listening now.
