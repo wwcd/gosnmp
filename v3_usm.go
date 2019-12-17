@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"hash"
 	"sync"
-	"sync/atomic"
 )
 
 // SnmpV3AuthProtocol describes the authentication protocol in use by an authenticated SnmpV3 connection.
@@ -275,9 +274,12 @@ func (sp *UsmSecurityParameters) usmAllocateNewSalt() (interface{}, error) {
 
 	switch sp.PrivacyProtocol {
 	case AES:
-		newSalt = atomic.AddUint64(&(sp.localAESSalt), 1)
+		// WSL: fix coredump in x386
+		sp.localAESSalt++
+		newSalt = sp.localAESSalt
 	default:
-		newSalt = atomic.AddUint32(&(sp.localDESSalt), 1)
+		sp.localDESSalt++
+		newSalt = sp.localDESSalt
 	}
 	return newSalt, nil
 }

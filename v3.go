@@ -67,6 +67,7 @@ func (packet *SnmpPacket) authenticate(msg []byte) ([]byte, error) {
 			fmt.Printf("recover: %v\n", e)
 		}
 	}()
+
 	if packet.Version != Version3 {
 		return msg, nil
 	}
@@ -99,6 +100,12 @@ func (x *GoSNMP) testAuthentication(packet []byte, result *SnmpPacket) error {
 }
 
 func (x *GoSNMP) initPacket(packetOut *SnmpPacket) error {
+	// WSL: using local configuration, support v3trap
+	packetOut.SecurityParameters.(*UsmSecurityParameters).AuthoritativeEngineID = ""
+	err := packetOut.SecurityParameters.setSecurityParameters(x.SecurityParameters)
+	if err != nil {
+		return err
+	}
 
 	if x.MsgFlags&AuthPriv > AuthNoPriv {
 		return x.SecurityParameters.initPacket(packetOut)
