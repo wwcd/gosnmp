@@ -13,9 +13,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
+	"crypto/hmac"
 	"crypto/md5"
 	crand "crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -30,6 +33,8 @@ const (
 	NoAuth SnmpV3AuthProtocol = 1
 	MD5    SnmpV3AuthProtocol = 2
 	SHA    SnmpV3AuthProtocol = 3
+	SHA256 SnmpV3AuthProtocol = 5
+	SHA512 SnmpV3AuthProtocol = 7
 )
 
 // SnmpV3PrivProtocol is the privacy protocol in use by an private SnmpV3 connection.
@@ -40,6 +45,8 @@ const (
 	NoPriv SnmpV3PrivProtocol = 1
 	DES    SnmpV3PrivProtocol = 2
 	AES    SnmpV3PrivProtocol = 3
+	AES192 SnmpV3PrivProtocol = 4
+	AES256 SnmpV3PrivProtocol = 5
 )
 
 // UsmSecurityParameters is an implementation of SnmpV3SecurityParameters for the UserSecurityModel
@@ -165,7 +172,7 @@ func (sp *UsmSecurityParameters) init(log Logger) error {
 	sp.Logger = log
 
 	switch sp.PrivacyProtocol {
-	case AES:
+	case AES, AES192, AES256:
 		salt := make([]byte, 8)
 		_, err = crand.Read(salt)
 		if err != nil {
@@ -237,7 +244,11 @@ func md5HMAC(password string, engineID string) []byte {
 	local.Write([]byte(engineID))
 	local.Write(compressed)
 	final := local.Sum(nil)
-	return final
+	// draft-blumenthal-aes-usm-04.txt
+	// 3.1.2.1.Short Localized Keys
+	local.Reset()
+	local.Write(final)
+	return append(final, local.Sum(nil)...)
 }
 
 // SHA HMAC key calculation algorithm
@@ -247,6 +258,38 @@ func shaHMAC(password string, engineID string) []byte {
 	hashed = cachedPasswordToKey(sha1.New(), "SHA1", password)
 
 	local := sha1.New()
+	local.Write(hashed)
+	local.Write([]byte(engineID))
+	local.Write(hashed)
+	final := local.Sum(nil)
+	// draft-blumenthal-aes-usm-04.txt
+	// 3.1.2.1.Short Localized Keys
+	local.Reset()
+	local.Write(final)
+	return append(final, local.Sum(nil)...)
+}
+
+// SHA256 HMAC key calculation algorithm
+func sha256HMAC(password string, engineID string) []byte {
+	var hashed []byte
+
+	hashed = cachedPasswordToKey(sha256.New(), "SHA256", password)
+
+	local := sha256.New()
+	local.Write(hashed)
+	local.Write([]byte(engineID))
+	local.Write(hashed)
+	final := local.Sum(nil)
+	return final
+}
+
+// SHA512 HMAC key calculation algorithm
+func sha512HMAC(password string, engineID string) []byte {
+	var hashed []byte
+
+	hashed = cachedPasswordToKey(sha512.New(), "SHA512", password)
+
+	local := sha512.New()
 	local.Write(hashed)
 	local.Write([]byte(engineID))
 	local.Write(hashed)
@@ -262,6 +305,10 @@ func genlocalkey(authProtocol SnmpV3AuthProtocol, passphrase string, engineID st
 		secretKey = md5HMAC(passphrase, engineID)
 	case SHA:
 		secretKey = shaHMAC(passphrase, engineID)
+	case SHA256:
+		secretKey = sha256HMAC(passphrase, engineID)
+	case SHA512:
+		secretKey = sha512HMAC(passphrase, engineID)
 	}
 
 	return secretKey
@@ -273,7 +320,7 @@ func (sp *UsmSecurityParameters) usmAllocateNewSalt() (interface{}, error) {
 	var newSalt interface{}
 
 	switch sp.PrivacyProtocol {
-	case AES:
+	case AES, AES192, AES256:
 		// WSL: fix coredump in x386
 		sp.localAESSalt++
 		newSalt = sp.localAESSalt
@@ -287,7 +334,7 @@ func (sp *UsmSecurityParameters) usmAllocateNewSalt() (interface{}, error) {
 func (sp *UsmSecurityParameters) usmSetSalt(newSalt interface{}) error {
 
 	switch sp.PrivacyProtocol {
-	case AES:
+	case AES, AES192, AES256:
 		aesSalt, ok := newSalt.(uint64)
 		if !ok {
 			return fmt.Errorf("salt provided to usmSetSalt is not the correct type for the AES privacy protocol")
@@ -327,7 +374,6 @@ func (sp *UsmSecurityParameters) initPacket(packet *SnmpPacket) error {
 }
 
 func (sp *UsmSecurityParameters) discoveryRequired() *SnmpPacket {
-
 	if sp.AuthoritativeEngineID == "" {
 		var emptyPdus []SnmpPDU
 
@@ -347,117 +393,96 @@ func (sp *UsmSecurityParameters) discoveryRequired() *SnmpPacket {
 	return nil
 }
 
-func usmFindAuthParamStart(packet []byte) (uint32, error) {
-	idx := bytes.Index(packet, []byte{byte(OctetString), 12,
-		0, 0, 0, 0,
-		0, 0, 0, 0,
-		0, 0, 0, 0})
+// usmHMACLength return the length of the Message Authentication Code (MAC)
+// MD5/SHA rfc3414 6/7
+// SHA256/SHA512 rfc7630 4.2
+func usmHMACLength(sp *UsmSecurityParameters) int {
+	var n int
+	switch sp.AuthenticationProtocol {
+	default:
+		n = 12
+	case SHA:
+		n = 12
+	case SHA256:
+		n = 24
+	case SHA512:
+		n = 48
+	}
 
+	return n
+}
+
+func usmHMACSum(sp *UsmSecurityParameters, packet []byte) []byte {
+	var h func() hash.Hash
+	switch sp.AuthenticationProtocol {
+	default:
+		h = md5.New
+	case SHA:
+		h = sha1.New
+	case SHA256:
+		h = sha256.New
+	case SHA512:
+		h = sha512.New
+	}
+
+	mac := hmac.New(h, sp.secretKey)
+	mac.Write(packet)
+	return mac.Sum(nil)[:usmHMACLength(sp)]
+}
+
+func usmFindAuthParamStart(sp *UsmSecurityParameters, packet []byte) (int, error) {
+	n := usmHMACLength(sp)
+	idx := bytes.Index(packet, append([]byte{byte(OctetString), byte(n)}, make([]byte, n)...))
 	if idx < 0 {
 		return 0, fmt.Errorf("Unable to locate the position in packet to write authentication key")
 	}
 
-	return uint32(idx + 2), nil
+	return idx + 2, nil
 }
 
 func (sp *UsmSecurityParameters) authenticate(packet []byte) error {
-
-	var extkey [64]byte
-
-	copy(extkey[:], sp.secretKey)
-
-	var k1, k2 [64]byte
-
-	for i := 0; i < 64; i++ {
-		k1[i] = extkey[i] ^ 0x36
-		k2[i] = extkey[i] ^ 0x5c
-	}
-
-	var h, h2 hash.Hash
-
-	switch sp.AuthenticationProtocol {
-	default:
-		h = md5.New()
-		h2 = md5.New()
-	case SHA:
-		h = sha1.New()
-		h2 = sha1.New()
-	}
-
-	h.Write(k1[:])
-	h.Write(packet)
-	d1 := h.Sum(nil)
-	h2.Write(k2[:])
-	h2.Write(d1)
-	authParamStart, err := usmFindAuthParamStart(packet)
+	authParamStart, err := usmFindAuthParamStart(sp, packet)
 	if err != nil {
 		return err
 	}
 
-	copy(packet[authParamStart:authParamStart+12], h2.Sum(nil)[:12])
+	copy(packet[authParamStart:], usmHMACSum(sp, packet))
 
 	return nil
 }
 
 // determine whether a message is authentic
 func (sp *UsmSecurityParameters) isAuthentic(packetBytes []byte, packet *SnmpPacket) (bool, error) {
-
-	var packetSecParams *UsmSecurityParameters
-	var err error
-
-	if packetSecParams, err = castUsmSecParams(packet.SecurityParameters); err != nil {
+	packetSecParams, err := castUsmSecParams(packet.SecurityParameters)
+	if err != nil {
 		return false, err
 	}
-	// TODO: investigate call chain to determine if this is really the best spot for this
-
-	var extkey [64]byte
-
-	copy(extkey[:], sp.secretKey)
-
-	var k1, k2 [64]byte
-
-	for i := 0; i < 64; i++ {
-		k1[i] = extkey[i] ^ 0x36
-		k2[i] = extkey[i] ^ 0x5c
+	if len(packetSecParams.AuthenticationParameters) == 0 {
+		return true, nil
 	}
-
-	var h, h2 hash.Hash
-
-	switch sp.AuthenticationProtocol {
-	default:
-		h = md5.New()
-		h2 = md5.New()
-	case SHA:
-		h = sha1.New()
-		h2 = sha1.New()
-	}
-
-	h.Write(k1[:])
-	h.Write(packetBytes)
-	d1 := h.Sum(nil)
-	h2.Write(k2[:])
-	h2.Write(d1)
-
-	result := h2.Sum(nil)[:12]
-	for k, v := range []byte(packetSecParams.AuthenticationParameters) {
-		if result[k] != v {
-			return false, nil
-		}
-	}
-	return true, nil
+	return hmac.Equal([]byte(packetSecParams.AuthenticationParameters), usmHMACSum(sp, packetBytes)), nil
 }
 
 func (sp *UsmSecurityParameters) encryptPacket(scopedPdu []byte) ([]byte, error) {
 	var b []byte
 
 	switch sp.PrivacyProtocol {
-	case AES:
+	case AES, AES192, AES256:
 		var iv [16]byte
 		binary.BigEndian.PutUint32(iv[:], sp.AuthoritativeEngineBoots)
 		binary.BigEndian.PutUint32(iv[4:], sp.AuthoritativeEngineTime)
 		copy(iv[8:], sp.PrivacyParameters)
 
-		block, err := aes.NewCipher(sp.privacyKey[:16])
+		var firstbits int
+		switch sp.PrivacyProtocol {
+		case AES:
+			firstbits = 16
+		case AES192:
+			firstbits = 24
+		case AES256:
+			firstbits = 32
+		}
+		block, err := aes.NewCipher(sp.privacyKey[:firstbits])
 		if err != nil {
 			return nil, err
 		}
@@ -503,13 +528,22 @@ func (sp *UsmSecurityParameters) decryptPacket(packet []byte, cursor int) ([]byt
 	cursorTmp += cursor
 
 	switch sp.PrivacyProtocol {
-	case AES:
+	case AES, AES192, AES256:
 		var iv [16]byte
 		binary.BigEndian.PutUint32(iv[:], sp.AuthoritativeEngineBoots)
 		binary.BigEndian.PutUint32(iv[4:], sp.AuthoritativeEngineTime)
 		copy(iv[8:], sp.PrivacyParameters)
 
-		block, err := aes.NewCipher(sp.privacyKey[:16])
+		var firstbits int
+		switch sp.PrivacyProtocol {
+		case AES:
+			firstbits = 16
+		case AES192:
+			firstbits = 24
+		case AES256:
+			firstbits = 32
+		}
+		block, err := aes.NewCipher(sp.privacyKey[:firstbits])
 		if err != nil {
 			return nil, err
 		}
@@ -568,10 +602,8 @@ func (sp *UsmSecurityParameters) marshal(flags SnmpV3MsgFlags) ([]byte, error) {
 
 	// msgAuthenticationParameters
 	if flags&AuthNoPriv > 0 {
-		buf.Write([]byte{byte(OctetString), 12,
-			0, 0, 0, 0,
-			0, 0, 0, 0,
-			0, 0, 0, 0})
+		n := usmHMACLength(sp)
+		buf.Write(append([]byte{byte(OctetString), byte(n)}, make([]byte, n)...))
 	} else {
 		buf.Write([]byte{byte(OctetString), 0})
 	}
@@ -671,8 +703,7 @@ func (sp *UsmSecurityParameters) unmarshal(flags SnmpV3MsgFlags, packet []byte, 
 	}
 	// blank msgAuthenticationParameters to prepare for authentication check later
 	if flags&AuthNoPriv > 0 {
-		blank := make([]byte, 12)
-		copy(packet[cursor+2:cursor+14], blank)
+		copy(packet[cursor+2:], make([]byte, count-2))
 	}
 	cursor += count
 
